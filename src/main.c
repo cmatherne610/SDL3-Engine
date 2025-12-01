@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "engine.h"
 
@@ -20,13 +21,11 @@ int main() {
 	player.speed = 8;
 	
 	player.rect = eng_addImageToRenderQueue(&app->window, "../images/test.png", 32, 32, 0, 0);
-	eng_createRect(32, 32, 0, 0, (eng_Color){255,0,0,255});
-	eng_createRect(32, 32, 32, 0, (eng_Color){255,0,0,255});
-	eng_createRect(32, 32, 64, 0, (eng_Color){255,0,0,255});
-	eng_createRect(32, 32, 96, 0, (eng_Color){255,0,0,255});
-	eng_createRect(32, 32, 128, 0, (eng_Color){255,0,0,255});
 
-	eng_moveToQueuePosition(player.rect, -1);
+	eng_Texture *font = eng_addFontToRenderQueue(&app->window, "../fonts/arial.ttf", 24, "Hello World", (eng_Color){255,255,255,255}, 128, app->window.width, 0, 128);
+	if (font == NULL) {
+		printf("%s\n", eng_getError());
+	}
 
 	while(app->isRunning) {
 		while (eng_pollEvent(app, 60)) {
@@ -44,6 +43,11 @@ int main() {
 					case ENG_KEY_D:
 						player.rect->x += player.speed;
 						break;
+					case ENG_KEY_G:
+					 	if (isTouching(app->mouse.x, app->mouse.y, 1, 1, font->x, font->y, font->h, font->w)) {
+							printf("Clicked\n");
+							eng_removeFromRenderQueue(font);
+						}
 				}
 			} else if(app->event.type == ENG_MOUSE_BUTTON) {
 				switch(app->event.value) {

@@ -1,13 +1,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 
 #include "engine.h"
-#include "SDL3/SDL_events.h"
-#include "SDL3/SDL_mouse.h"
-#include "SDL3/SDL_render.h"
 
 typedef enum {
 	TYPE_UNKNOWN,
@@ -32,6 +30,8 @@ static uint32_t endingNS = 0;
 static RenderQueue *renderQueue = NULL;
 static uint32_t renderQueueCount = 0;
 Mouse eng_getMousePosition();
+
+
 
 static RenderQueue *getObjectFromPointer(void *data) {
 	RenderQueue *temp = renderQueue;
@@ -150,6 +150,22 @@ ENG_RESULT eng_moveToQueuePosition(void *data, int position) {
 	}
 
 	return SUCCESS;
+}
+
+bool isTouching(uint32_t firstX, uint32_t firstY, uint32_t firstH, uint32_t firstW, uint32_t secondX, uint32_t secondY, uint32_t secondH, uint32_t secondW) {
+	SDL_Rect firstRect = (SDL_Rect) {
+		.x = firstX,
+		.y = firstY,
+		.h = firstH,
+		.w = firstW,
+	};
+	SDL_Rect secondRect = (SDL_Rect) {
+		.x = secondX,
+		.y = secondY,
+		.h = secondH,
+		.w = secondW,
+	};
+	return SDL_HasRectIntersection(&firstRect, &secondRect);
 }
 
 eng_Rect *eng_createRect(uint32_t h, uint32_t w, uint32_t x, uint32_t y, eng_Color color) {
@@ -321,15 +337,80 @@ eng_Texture *eng_addImageToRenderQueue(struct Window *pWindow, const char *path,
 	return texture;
 }
 
+static ENG_RESULT addTextureToRenderQueue(eng_Texture *texture) {
+	if (renderQueueCount == 0) {
+		renderQueue->type = TYPE_SURFACE;
+		renderQueue->data = texture;
+		renderQueue->pNext = NULL;
+	} else {
+		RenderQueue *temp = renderQueue;
+		while (temp->pNext != NULL) {
+			temp = temp->pNext;
+		}
+		temp->pNext = malloc(sizeof(RenderQueue));
+		temp->pNext->pNext = NULL;
+		temp->pNext->type = TYPE_SURFACE;
+		temp->pNext->data = texture;
+	}
+
+	renderQueueCount++;
+	if (debug)
+		printf("Added to render queue\tCurrent count: %d\n", renderQueueCount);
+
+	return SUCCESS;
+}
+
+eng_Texture *eng_addFontToRenderQueue(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
+	eng_Texture *texture = (eng_Texture *)malloc(sizeof(eng_Texture));
+
+	SDL_Color selectedColor = (SDL_Color) {
+		.r = color.r,
+		.g = color.g,
+		.b = color.b,
+		.a = color.a,
+	};
+
+	TTF_Font *selectedFont = TTF_OpenFont(font, fontSize);
+	if (selectedFont == NULL) {
+		errorCode = FAILED_TO_OPEN_FONT;
+		free(texture);
+		return NULL;
+	}
+	SDL_Surface *fontSurface = TTF_RenderText_Solid(selectedFont, text, strlen(text), selectedColor);
+	if (fontSurface == NULL) {
+		errorCode = FAILED_TO_CREATE_FONT_RENDER;
+		free(texture);
+		return NULL;
+	}
+	SDL_Texture * fontTexture = SDL_CreateTextureFromSurface(window->pRenderer, fontSurface);
+	if (texture == NULL) {
+		errorCode = FAILED_TO_CONVERT_FONT_TO_TEXTURE;
+		free(texture);
+		return NULL;
+	}
+	SDL_DestroySurface(fontSurface);
+
+	*texture = (eng_Texture) {
+		.texture = fontTexture,
+		.h = h,
+		.w = w,
+		.x = x,
+		.y = y,
+	};
+
+	addTextureToRenderQueue(texture);
+
+	return texture;
+}
+
 ENG_RESULT eng_init(bool debugEnabled) {
 	debug = debugEnabled;
 	renderQueue = (RenderQueue *)malloc(sizeof(RenderQueue));
 	renderQueue->pNext = NULL;
 	renderQueue->data = NULL;
 
-	if (!SDL_Init(SDL_INIT_VIDEO)) {
-		errorCode = FAILED_TO_INIT_SDL;
-		return errorCode;
+	if (!SDL_Init(SDL_INIT_VIDEO) || !TTF_Init()) {
+		return errorCode = FAILED_TO_INIT_SDL;
 	}
 	if (debug) {
 		printf("Successfully initialized SDL\n");
@@ -561,6 +642,12 @@ const char *eng_getError() {
 			return "Failed to find type of data from the queue";
 		case POSITION_CANT_BE_ZERO:
 			return "The position provided was exactly zero";
+		case FAILED_TO_OPEN_FONT:
+			return "Failed to open the font, check spelling and location of font";
+		case FAILED_TO_CREATE_FONT_RENDER:
+			return "Failed to create text into a format for the render queue";
+		case FAILED_TO_CONVERT_FONT_TO_TEXTURE:
+			return "Failed to convert font to a texture";
 	}
 
 	return "Failed to find error";
@@ -632,5 +719,6 @@ void eng_quit(Application *app) {
 		SDL_DestroyWindow(app->window.pWindow);
 	}
 
+	TTF_Quit();
 	SDL_Quit();
 }
