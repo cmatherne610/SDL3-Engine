@@ -20,7 +20,21 @@ typedef enum {
 	FAILED_TO_OPEN_FONT,
 	FAILED_TO_CREATE_FONT_RENDER,
 	FAILED_TO_CONVERT_FONT_TO_TEXTURE,
+	INVALID_TYPE,
+	QUEUE_WAS_NULL,
 } ENG_RESULT;
+
+typedef enum {
+	TYPE_UNKNOWN,
+	TYPE_RECT,
+	TYPE_SURFACE,
+} Type;
+
+typedef struct RenderQueue {
+	struct RenderQueue *pNext;
+	Type type;
+	void *data;
+} RenderQueue;
 
 typedef struct {
 	int r;
@@ -30,10 +44,10 @@ typedef struct {
 } eng_Color;
 
 typedef struct {
-	uint32_t h;
-	uint32_t w;
-	uint32_t x;
-	uint32_t y;
+	float h;
+	float w;
+	float x;
+	float y;
 	eng_Color *color;
 } eng_Rect;
 
@@ -46,6 +60,8 @@ typedef enum {
 } ENG_TYPE;
 
 typedef enum {
+	ENG_KEY_ESC,
+
 	ENG_KEY_0 = '0',	
 	ENG_KEY_1,	
 	ENG_KEY_2,	
@@ -104,8 +120,8 @@ typedef struct {
 struct Window {
 	SDL_Window *pWindow;
 	SDL_Renderer *pRenderer;
-	uint32_t width;
-	uint32_t height;
+	int width;
+	int height;
 	SDL_Texture background;
 };
 
@@ -118,10 +134,10 @@ typedef struct {
 } Application;
 
 typedef struct {
-	uint32_t h;
-	uint32_t w;
-	uint32_t x;
-	uint32_t y;
+	float h;
+	float w;
+	float x;
+	float y;
 	SDL_Texture *texture;
 } eng_Texture;
 
@@ -187,11 +203,27 @@ eng_Texture *eng_addFontToRenderQueue(struct Window *window, const char *font, u
 /*
 * Returns weather two positions collide, you can set the width and height of 1 for the cursor
 */
-bool isTouching(uint32_t firstX, uint32_t firstY, uint32_t firstH, uint32_t firstW, uint32_t secondX, uint32_t secondY, uint32_t secondH, uint32_t secondW);
+bool eng_isTouchingRects(eng_Rect firstRect, eng_Rect secondRect);
+
+/*
+* Returns weather two positions collide, you can set the width and height of 1 for the cursor
+*/
+bool eng_isTouching(float firstX, float firstY, float firstH, float firstW, float secondX, float secondY, float secondH, float secondW);
 
 /*
 * This returns the error, it's just a switch case with every error being stored in a static enum before exiting a function
 */
 const char *eng_getError();
+
+/*
+* This adds to a custom queue, just set the data in the first RenderQueue to NULL if you haven't added anything yet
+*/
+ENG_RESULT eng_addToCustomQueue(RenderQueue *queue, void *object, Type type);
+
+ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue);
+
+eng_Texture *eng_createFont(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y);
+
+ENG_RESULT eng_removeFromCustomRenderQueue(RenderQueue *queue, void *data);
 
 #endif

@@ -4,20 +4,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "engine.h"
+#include "SDL3/SDL_events.h"
+#include "SDL3/SDL_oldnames.h"
+#include "SDL3/SDL_render.h"
+#include "SDL3/SDL_video.h"
 
-typedef enum {
-	TYPE_UNKNOWN,
-	TYPE_RECT,
-	TYPE_SURFACE,
-} Type;
-
-typedef struct RenderQueue {
-	struct RenderQueue *pNext;
-	Type type;
-	void *data;
-} RenderQueue;
 
 static ENG_RESULT errorCode = SUCCESS;
 static SDL_Event e;
@@ -152,7 +146,23 @@ ENG_RESULT eng_moveToQueuePosition(void *data, int position) {
 	return SUCCESS;
 }
 
-bool isTouching(uint32_t firstX, uint32_t firstY, uint32_t firstH, uint32_t firstW, uint32_t secondX, uint32_t secondY, uint32_t secondH, uint32_t secondW) {
+bool eng_isTouchingRects(eng_Rect firstRect, eng_Rect secondRect) {
+	SDL_Rect rect1 = (SDL_Rect) {
+		.x = firstRect.x,
+		.y = firstRect.y,
+		.h = firstRect.h,
+		.w = firstRect.w,
+	};
+	SDL_Rect rect2 = (SDL_Rect) {
+		.x = secondRect.x,
+		.y = secondRect.y,
+		.h = secondRect.h,
+		.w = secondRect.w,
+	};
+	return SDL_HasRectIntersection(&rect1, &rect2);
+}
+
+bool eng_isTouching(float firstX, float firstY, float firstH, float firstW, float secondX, float secondY, float secondH, float secondW) {
 	SDL_Rect firstRect = (SDL_Rect) {
 		.x = firstX,
 		.y = firstY,
@@ -289,6 +299,45 @@ ENG_RESULT eng_removeFromRenderQueue(void *data) {
 	return SUCCESS;
 }
 
+ENG_RESULT eng_removeFromCustomRenderQueue(RenderQueue *queue, void *data) {
+	RenderQueue *temp = queue;
+	RenderQueue *prev = temp;
+	bool success = false;
+
+	if (temp->data == data) {
+		queue = temp->pNext;
+		free(temp->data);
+		free(temp);
+
+		success = true;
+		if (debug)
+			printf("Removed from custom render queue\n");
+	}
+
+	while (temp != NULL && success == false) {
+		if (temp->data == data) {
+			prev->pNext = temp->pNext;
+			free(temp->data);
+			free(temp);
+
+			success = true;
+			if (debug)
+				printf("Removed from custom render queue\n");
+
+			break;
+		}
+		prev = temp;
+		temp = temp->pNext;
+	}
+
+	if (success != true) {
+		errorCode = FAILED_TO_REMOVE_RECT_FROM_RENDER_QUEUE;
+		return FAILED_TO_REMOVE_RECT_FROM_RENDER_QUEUE;
+	}
+
+	return SUCCESS;
+}
+
 eng_Texture *eng_addImageToRenderQueue(struct Window *pWindow, const char *path, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
 	SDL_Surface *surface = IMG_Load(path);
 	if (surface == NULL) {
@@ -358,6 +407,47 @@ static ENG_RESULT addTextureToRenderQueue(eng_Texture *texture) {
 		printf("Added to render queue\tCurrent count: %d\n", renderQueueCount);
 
 	return SUCCESS;
+}
+
+eng_Texture *eng_createFont(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
+	eng_Texture *texture = (eng_Texture *)malloc(sizeof(eng_Texture));
+
+	SDL_Color selectedColor = (SDL_Color) {
+		.r = color.r,
+		.g = color.g,
+		.b = color.b,
+		.a = color.a,
+	};
+
+	TTF_Font *selectedFont = TTF_OpenFont(font, fontSize);
+	if (selectedFont == NULL) {
+		errorCode = FAILED_TO_OPEN_FONT;
+		free(texture);
+		return NULL;
+	}
+	SDL_Surface *fontSurface = TTF_RenderText_Solid(selectedFont, text, strlen(text), selectedColor);
+	if (fontSurface == NULL) {
+		errorCode = FAILED_TO_CREATE_FONT_RENDER;
+		free(texture);
+		return NULL;
+	}
+	SDL_Texture * fontTexture = SDL_CreateTextureFromSurface(window->pRenderer, fontSurface);
+	if (texture == NULL) {
+		errorCode = FAILED_TO_CONVERT_FONT_TO_TEXTURE;
+		free(texture);
+		return NULL;
+	}
+	SDL_DestroySurface(fontSurface);
+
+	*texture = (eng_Texture) {
+		.texture = fontTexture,
+		.h = h,
+		.w = w,
+		.x = x,
+		.y = y,
+	};
+
+	return texture;
 }
 
 eng_Texture *eng_addFontToRenderQueue(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
@@ -441,6 +531,9 @@ bool eng_pollEvent(Application *app, uint32_t fps) {
 	} else if (e.type == SDL_EVENT_KEY_DOWN) {
 		app->event.type = ENG_EVENT_KEY_DOWN;
 		switch(e.key.scancode) {
+			case SDL_SCANCODE_ESCAPE:
+				app->event.value = ENG_KEY_ESC;
+				break;
 			case SDL_SCANCODE_0:
 				app->event.value = ENG_KEY_0;
 				break;
@@ -568,6 +661,9 @@ bool eng_pollEvent(Application *app, uint32_t fps) {
 				app->event.value = MOUSE_BUTTON_RIGHT;
 				break;
 		}
+	} else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+		SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
+		return true;
 	}
 
 	return false;
@@ -648,6 +744,10 @@ const char *eng_getError() {
 			return "Failed to create text into a format for the render queue";
 		case FAILED_TO_CONVERT_FONT_TO_TEXTURE:
 			return "Failed to convert font to a texture";
+		case INVALID_TYPE:
+			return "Cannot provide TYPE_UNKNOWN to function";
+		case QUEUE_WAS_NULL:
+			return "The queue provided was NULL";
 	}
 
 	return "Failed to find error";
@@ -657,7 +757,7 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 	Application *app = (Application *)malloc(sizeof(Application));
 	app->isRunning = true;
 
-	app->window.pWindow = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
+	app->window.pWindow = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 	if (app->window.pWindow == NULL) {
 		errorCode = FAILED_TO_CREATE_WINDOW;
 		free(app);
@@ -667,8 +767,7 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 		printf("Created Window\n");
 	}
 
-	app->window.width = width;
-	app->window.height = height;
+	SDL_GetWindowSizeInPixels(app->window.pWindow, &app->window.width, &app->window.height);
 
 	app->window.pRenderer = SDL_CreateRenderer(app->window.pWindow, NULL);
 	if (app->window.pRenderer == NULL) {
@@ -721,4 +820,72 @@ void eng_quit(Application *app) {
 
 	TTF_Quit();
 	SDL_Quit();
+}
+
+ENG_RESULT eng_addToCustomQueue(RenderQueue *queue, void *object, Type type) {
+	if (type == TYPE_UNKNOWN) {
+		return errorCode = INVALID_TYPE;
+	}
+
+	if (queue == NULL) {
+		return errorCode = QUEUE_WAS_NULL;
+	}
+
+	if (queue->data == NULL) {
+		queue->data = object;
+		queue->pNext = NULL;
+		queue->type = type;
+	}
+
+	RenderQueue *newQueue = (RenderQueue *)malloc(sizeof(RenderQueue));
+	if (newQueue == NULL) {
+		return  errorCode = FAILED_TO_MALLOC;
+	}
+
+	*newQueue = (RenderQueue) {
+		.pNext = NULL,
+		.type = type,
+		.data = object,
+	};
+	
+	RenderQueue *curr = queue;
+	while (curr->pNext != NULL) {
+		curr = curr->pNext;
+	}
+	curr->pNext = newQueue;
+
+	return errorCode = SUCCESS;
+}
+
+ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
+	RenderQueue *curr = customQueue;
+	SDL_SetRenderDrawColor(app->window.pRenderer, 0, 0, 0, 255);
+	SDL_RenderClear(app->window.pRenderer);
+	while (curr != NULL) {
+		if (curr->type == TYPE_RECT) {
+			eng_Rect *rect = curr->data;
+			SDL_FRect frect = (SDL_FRect) {
+				.h = rect->h,
+				.w = rect->w,
+				.x = rect->x,
+				.y = rect->y,
+			};
+			SDL_RenderFillRect(app->window.pRenderer, &frect);
+		} else if (curr->type == TYPE_SURFACE) {
+			eng_Texture *texture = curr->data;
+			SDL_FRect rect = (SDL_FRect) {
+				.h = texture->h,
+				.w = texture->w,
+				.x = texture->x,
+				.y = texture->y,
+			};
+			SDL_RenderTexture(app->window.pRenderer, texture->texture, NULL, &rect);
+		}
+
+		curr = curr->pNext;
+	}
+
+	SDL_RenderPresent(app->window.pRenderer);
+
+	return SUCCESS;
 }
