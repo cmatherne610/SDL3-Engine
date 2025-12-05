@@ -27,26 +27,38 @@ int main() {
 	player.jumpHeight = 50;
 	player.isJumping = false;
 	
-	eng_Rect *ground = eng_createRect(32, app->window.width, 0, app->window.height-32, (eng_Color){0,0,0,0});
-	player.rect = eng_addImageToRenderQueue(&app->window, "../images/test.png", 32, 32, app->window.width/2-16, app->window.height-64);
+	eng_Rect *ground = eng_createRect(32, app->window.width, 0, app->window.height-32, (eng_Color){0,255,90,255});
+	player.rect = eng_createImage(&app->window, "../images/test.png", 32, 32, app->window.width/2-16, app->window.height-64);
+	eng_addObjectToRenderQueue(ground, TYPE_RECT);
+	eng_addObjectToRenderQueue(player.rect, TYPE_TEXTURE);
 
-	eng_Texture *start= eng_createFont(&app->window, "../fonts/arial.ttf", 24, "Start", (eng_Color){255,255,255,255}, 128, app->window.width/3, app->window.width/2-(128), app->window.height/3-128);
+	eng_Text *resume = eng_createText(&app->window, "../fonts/arial.ttf", 72, "Resume", (eng_Color){255,255,255,255}, 0, 0);
+	if (resume == NULL) {
+		printf("%s\n", eng_getError());
+	}
+	eng_Text *start= eng_createText(&app->window, "../fonts/arial.ttf", 72, "Start", (eng_Color){255,255,255,255}, 0, 0);
 	if (start == NULL) {
 		printf("%s\n", eng_getError());
 	}
-	eng_Texture *options= eng_createFont(&app->window, "../fonts/arial.ttf", 24, "Options", (eng_Color){255,255,255,255}, 128, app->window.width/3, app->window.width/2-(128), app->window.height/2-100);
+	eng_Text *options = eng_createText(&app->window, "../fonts/arial.ttf", 72, "Options", (eng_Color){255,255,255,255}, 0, 0); 
 	if (options == NULL) {
 		printf("%s\n", eng_getError());
 	}
-	eng_Texture *quit= eng_createFont(&app->window, "../fonts/arial.ttf", 24, "Quit", (eng_Color){255,255,255,255}, 128, app->window.width/3, app->window.width/2-(128), app->window.height/2+50);
+	eng_Text *quit = eng_createText(&app->window, "../fonts/arial.ttf", 72, "Quit", (eng_Color){255,255,255,255}, 0, 0);
 	if (quit == NULL) {
 		printf("%s\n", eng_getError());
 	}
+	eng_centerText(&app->window, resume);
+	//eng_centerText(&app->window, start);
+	eng_centerText(&app->window, options);
+	eng_centerText(&app->window, quit);
+	resume->y -= options->h;
+	quit->y += options->h;
 
-	RenderQueue *queue = malloc(sizeof(RenderQueue));
-	eng_addToCustomQueue(queue, start, TYPE_SURFACE);
-	eng_addToCustomQueue(queue, options, TYPE_SURFACE);
-	eng_addToCustomQueue(queue, quit, TYPE_SURFACE);
+	RenderQueue *menu = malloc(sizeof(RenderQueue));
+	eng_addToCustomQueue(menu, resume, TYPE_TEXT);
+	eng_addToCustomQueue(menu, options, TYPE_TEXT);
+	eng_addToCustomQueue(menu, quit, TYPE_TEXT);
 	bool pauseMenu = true;
 
 	while(app->isRunning) {
@@ -72,15 +84,22 @@ int main() {
 						break;
 					case ENG_KEY_G:
 					if (pauseMenu) {
-						if (eng_isTouching(app->mouse.x, app->mouse.y, 1, 1, options->x, options->y, options->h, options->w) == true) {
+						eng_Rect rect = (eng_Rect) {
+							.h = 1,
+							.w = 1,
+							.x = app->mouse.x,
+							.y = app->mouse.y,
+						};
+						if (eng_isTouchingRects(eng_extractRectFromObject(options, TYPE_TEXT), rect)) {
 							printf("print options\n");
-						} else if (eng_isTouching(app->mouse.x, app->mouse.y, 1, 1, start->x, start->y, start->h, start->w) == true) {
+						} else if (eng_isTouchingRects(eng_extractRectFromObject(resume, TYPE_TEXT), rect)) {
 							pauseMenu = !pauseMenu;
-						} else if (eng_isTouching(app->mouse.x, app->mouse.y, 1, 1, quit->x, quit->y, quit->h, quit->w) == true) {
+						} else if (eng_isTouchingRects(eng_extractRectFromObject(quit, TYPE_TEXT), rect)) {
 							app->isRunning = false;
 						}
 
 					}
+						break;
 				}
 			} else if(app->event.type == ENG_MOUSE_BUTTON) {
 				switch(app->event.value) {
@@ -91,27 +110,40 @@ int main() {
 					case MOUSE_BUTTON_RIGHT:
 						break;
 				}
+			} else if (app->event.type == ENG_EVENT_WINDOW_SIZE_CHANGED) {
+				eng_centerText(&app->window, resume);
+				//eng_centerText(&app->window, start);
+				eng_centerText(&app->window, options);
+				eng_centerText(&app->window, quit);
+				resume->y -= 128;
+				quit->y += 128;
+
+				ground->w = app->window.width;
+				ground->y = app->window.height-32;
+
+				player.rect->y = app->window.height-64;
 			}
 		}
 
-		if (!eng_isTouching(player.rect->x, player.rect->y, player.rect->h, player.rect->w, ground->x, ground->y, ground->h, ground->w) && !player.isJumping) {
-			player.inAir = true;
-			player.rect->y += .5;
-		} else {
-			player.inAir = false;
-		}
-
-		if (player.isJumping && player.rect->y > player.jumpStartHeight - player.jumpHeight) {
-			player.rect->y -= 1;
-		} else {
-			player.isJumping = false;
-		}
-
 		if (pauseMenu) {
-			eng_renderCustomQueue(app, queue);
+			eng_renderCustomQueue(app, menu);
 		} else {
+			if (!eng_isTouching(player.rect->x, player.rect->y, player.rect->h, player.rect->w, ground->x, ground->y, ground->h, ground->w) && !player.isJumping) {
+				player.inAir = true;
+				player.rect->y += .5;
+			} else {
+				player.inAir = false;
+			}
+
+			if (player.isJumping && player.rect->y > player.jumpStartHeight - player.jumpHeight) {
+				player.rect->y -= 1;
+			} else {
+				player.isJumping = false;
+			}
 			eng_render(app);
 		}
+
+
 	}
 	eng_quit(app);
 }

@@ -7,10 +7,6 @@
 #include <string.h>
 
 #include "engine.h"
-#include "SDL3/SDL_events.h"
-#include "SDL3/SDL_oldnames.h"
-#include "SDL3/SDL_render.h"
-#include "SDL3/SDL_video.h"
 
 
 static ENG_RESULT errorCode = SUCCESS;
@@ -110,10 +106,6 @@ ENG_RESULT eng_moveToQueuePosition(void *data, int position) {
 	}
 
 
-	//if (position < 0) {
-		//position = renderQueueCount-(abs(position) + 1);
-	//}
-
 	if (renderQueueCount == 1) {
 		return SUCCESS;
 	}
@@ -204,58 +196,7 @@ eng_Rect *eng_createRect(uint32_t h, uint32_t w, uint32_t x, uint32_t y, eng_Col
 		.a = color.a,
 	};
 
-	if (renderQueueCount == 0) {
-		renderQueue->type = TYPE_RECT;
-		renderQueue->data = rect;
-	} else {
-
-
-		RenderQueue *next = (RenderQueue *)malloc(sizeof(RenderQueue));
-		*next = (RenderQueue) {
-			.pNext = NULL,
-			.type = TYPE_RECT,
-			.data = rect,
-		};
-
-		RenderQueue *temp = renderQueue;
-		while (temp->pNext != NULL) {
-			temp = temp->pNext;
-		}
-		temp->pNext = next;
-	}
-
-	renderQueueCount++;
-	if (debug)
-		printf("Added to render queue\tCurrent count: %d\n", renderQueueCount);
-
 	return rect;
-}
-
-ENG_RESULT eng_addRectToRenderQueue(eng_Rect *rect) {
-	renderQueue = realloc(renderQueue, sizeof(RenderQueue) * renderQueueCount + 1);
-	if (renderQueue == NULL) {
-		errorCode = FAILED_TO_MALLOC;
-		return errorCode;
-	}
-
-	if (renderQueueCount == 0) {
-		renderQueue->type = TYPE_RECT;
-		renderQueue->data = rect;
-	} else {
-		RenderQueue *temp = renderQueue;
-		while (temp->pNext != NULL) {
-			temp = temp->pNext;
-		}
-		temp->pNext->pNext = NULL;
-		temp->pNext->type = TYPE_RECT;
-		temp->pNext->data = rect;
-	}
-
-	renderQueueCount++;
-	if (debug)
-		printf("Added to render queue\tCurrent count: %d\n", renderQueueCount);
-
-	return SUCCESS;
 }
 
 ENG_RESULT eng_removeFromRenderQueue(void *data) {
@@ -338,7 +279,7 @@ ENG_RESULT eng_removeFromCustomRenderQueue(RenderQueue *queue, void *data) {
 	return SUCCESS;
 }
 
-eng_Texture *eng_addImageToRenderQueue(struct Window *pWindow, const char *path, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
+eng_Texture *eng_createImage(Window *pWindow, const char *path, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
 	SDL_Surface *surface = IMG_Load(path);
 	if (surface == NULL) {
 		errorCode = FAILED_TO_LOAD_IMAGE;
@@ -364,42 +305,27 @@ eng_Texture *eng_addImageToRenderQueue(struct Window *pWindow, const char *path,
 		.texture = newTexture,
 	};
 
-	if (renderQueueCount == 0) {
-		renderQueue->type = TYPE_SURFACE;
-		renderQueue->data = texture;
-		renderQueue->pNext = NULL;
-	} else {
-		RenderQueue *temp = renderQueue;
-		while (temp->pNext != NULL) {
-			temp = temp->pNext;
-		}
-		temp->pNext = malloc(sizeof(RenderQueue));
-		temp->pNext->pNext = NULL;
-		temp->pNext->type = TYPE_SURFACE;
-		temp->pNext->data = texture;
-	}
-
-	renderQueueCount++;
-	if (debug)
-		printf("Added to render queue\tCurrent count: %d\n", renderQueueCount);
-
 	return texture;
 }
 
-static ENG_RESULT addTextureToRenderQueue(eng_Texture *texture) {
+ENG_RESULT eng_addObjectToRenderQueue(void *object, Type type) {
+	RenderQueue *newQueue = malloc(sizeof(RenderQueue));
+	*newQueue = (RenderQueue) {
+		.pNext = NULL,
+		.data = object,
+		.type = type,
+	};
+
 	if (renderQueueCount == 0) {
-		renderQueue->type = TYPE_SURFACE;
-		renderQueue->data = texture;
-		renderQueue->pNext = NULL;
+		free(newQueue);
+		renderQueue->type = type;
+		renderQueue->data = object;
 	} else {
 		RenderQueue *temp = renderQueue;
 		while (temp->pNext != NULL) {
 			temp = temp->pNext;
 		}
-		temp->pNext = malloc(sizeof(RenderQueue));
-		temp->pNext->pNext = NULL;
-		temp->pNext->type = TYPE_SURFACE;
-		temp->pNext->data = texture;
+		temp->pNext = newQueue;
 	}
 
 	renderQueueCount++;
@@ -407,10 +333,12 @@ static ENG_RESULT addTextureToRenderQueue(eng_Texture *texture) {
 		printf("Added to render queue\tCurrent count: %d\n", renderQueueCount);
 
 	return SUCCESS;
+
+	return UNKNOWN_ERROR;
 }
 
-eng_Texture *eng_createFont(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
-	eng_Texture *texture = (eng_Texture *)malloc(sizeof(eng_Texture));
+eng_Text *eng_createText(Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t x, uint32_t y) {
+	eng_Text *texture = (eng_Text *)malloc(sizeof(eng_Text));
 
 	SDL_Color selectedColor = (SDL_Color) {
 		.r = color.r,
@@ -425,13 +353,13 @@ eng_Texture *eng_createFont(struct Window *window, const char *font, uint32_t fo
 		free(texture);
 		return NULL;
 	}
-	SDL_Surface *fontSurface = TTF_RenderText_Solid(selectedFont, text, strlen(text), selectedColor);
+	SDL_Surface *fontSurface = TTF_RenderText_Blended(selectedFont, text, strlen(text), selectedColor);
 	if (fontSurface == NULL) {
 		errorCode = FAILED_TO_CREATE_FONT_RENDER;
 		free(texture);
 		return NULL;
 	}
-	SDL_Texture * fontTexture = SDL_CreateTextureFromSurface(window->pRenderer, fontSurface);
+	SDL_Texture *fontTexture = SDL_CreateTextureFromSurface(window->pRenderer, fontSurface);
 	if (texture == NULL) {
 		errorCode = FAILED_TO_CONVERT_FONT_TO_TEXTURE;
 		free(texture);
@@ -439,56 +367,18 @@ eng_Texture *eng_createFont(struct Window *window, const char *font, uint32_t fo
 	}
 	SDL_DestroySurface(fontSurface);
 
-	*texture = (eng_Texture) {
+	TTF_Text *textPointer = TTF_CreateText(NULL, selectedFont, text, 0);
+	int h, w;
+	TTF_GetTextSize(textPointer, &w, &h);
+
+	*texture = (eng_Text) {
 		.texture = fontTexture,
 		.h = h,
 		.w = w,
 		.x = x,
 		.y = y,
+		.text = textPointer,
 	};
-
-	return texture;
-}
-
-eng_Texture *eng_addFontToRenderQueue(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y) {
-	eng_Texture *texture = (eng_Texture *)malloc(sizeof(eng_Texture));
-
-	SDL_Color selectedColor = (SDL_Color) {
-		.r = color.r,
-		.g = color.g,
-		.b = color.b,
-		.a = color.a,
-	};
-
-	TTF_Font *selectedFont = TTF_OpenFont(font, fontSize);
-	if (selectedFont == NULL) {
-		errorCode = FAILED_TO_OPEN_FONT;
-		free(texture);
-		return NULL;
-	}
-	SDL_Surface *fontSurface = TTF_RenderText_Solid(selectedFont, text, strlen(text), selectedColor);
-	if (fontSurface == NULL) {
-		errorCode = FAILED_TO_CREATE_FONT_RENDER;
-		free(texture);
-		return NULL;
-	}
-	SDL_Texture * fontTexture = SDL_CreateTextureFromSurface(window->pRenderer, fontSurface);
-	if (texture == NULL) {
-		errorCode = FAILED_TO_CONVERT_FONT_TO_TEXTURE;
-		free(texture);
-		return NULL;
-	}
-	SDL_DestroySurface(fontSurface);
-
-	*texture = (eng_Texture) {
-		.texture = fontTexture,
-		.h = h,
-		.w = w,
-		.x = x,
-		.y = y,
-	};
-
-	addTextureToRenderQueue(texture);
 
 	return texture;
 }
@@ -511,7 +401,6 @@ ENG_RESULT eng_init(bool debugEnabled) {
 
 bool eng_pollEvent(Application *app, uint32_t fps) {
 	SDL_PollEvent(&e);
-	app->mouse = eng_getMousePosition();
 
 	if (fps > 0) {
 		nsPerFrame = 1000000000 / fps;
@@ -664,6 +553,14 @@ bool eng_pollEvent(Application *app, uint32_t fps) {
 	} else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
 		SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
 		return true;
+	} else if (e.type == SDL_EVENT_WINDOW_RESIZED) {
+		app->event.type = ENG_EVENT_WINDOW_SIZE_CHANGED;
+		SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
+		return true;
+	} else if (e.type == SDL_EVENT_MOUSE_MOTION) {
+		app->event.type = ENG_EVENT_MOUSE_MOTION;
+		app->mouse = eng_getMousePosition();
+		return true;
 	}
 
 	return false;
@@ -675,6 +572,11 @@ Mouse eng_getMousePosition() {
 	SDL_GetMouseState(&mouse.x, &mouse.y);
 
 	return mouse;
+}
+
+void eng_centerText(Window *pWindow, eng_Text *text) {
+	text->x = (float)(pWindow->width - text->w) / 2;
+	text->y = (float)(pWindow->height - text->h) / 2;
 }
 
 void eng_render(Application *app) {
@@ -697,7 +599,7 @@ void eng_render(Application *app) {
 
 				SDL_SetRenderDrawColor(app->window.pRenderer, rect->color->r, rect->color->g,rect->color->b, rect->color->a);
 				SDL_RenderFillRect(app->window.pRenderer, &frect);
-			} else if (temp->type == TYPE_SURFACE) {
+			} else if (temp->type == TYPE_TEXTURE) {
 				eng_Texture *texture = temp->data;
 				SDL_FRect rect = (SDL_FRect) {
 					.h = texture->h,
@@ -706,6 +608,15 @@ void eng_render(Application *app) {
 					.y = texture->y,
 				};
 				SDL_RenderTexture(app->window.pRenderer, texture->texture, NULL, &rect);
+			} else if (temp->type == TYPE_TEXT) {
+				eng_Text *text = temp->data;
+				SDL_FRect rect = (SDL_FRect) {
+					.h = text->h,
+					.w = text->w,
+					.x = text->x,
+					.y = text->y,
+				};
+				SDL_RenderTexture(app->window.pRenderer, text->texture, NULL, &rect);
 			}
 			temp = temp->pNext;
 		}
@@ -748,6 +659,8 @@ const char *eng_getError() {
 			return "Cannot provide TYPE_UNKNOWN to function";
 		case QUEUE_WAS_NULL:
 			return "The queue provided was NULL";
+		case UNKNOWN_ERROR:
+			return "The error is unknown, this shouldn't be possible";
 	}
 
 	return "Failed to find error";
@@ -757,7 +670,7 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 	Application *app = (Application *)malloc(sizeof(Application));
 	app->isRunning = true;
 
-	app->window.pWindow = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+	app->window.pWindow = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
 	if (app->window.pWindow == NULL) {
 		errorCode = FAILED_TO_CREATE_WINDOW;
 		free(app);
@@ -767,7 +680,7 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 		printf("Created Window\n");
 	}
 
-	SDL_GetWindowSizeInPixels(app->window.pWindow, &app->window.width, &app->window.height);
+	SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
 
 	app->window.pRenderer = SDL_CreateRenderer(app->window.pWindow, NULL);
 	if (app->window.pRenderer == NULL) {
@@ -799,7 +712,7 @@ void eng_quit(Application *app) {
 				eng_Rect *rect = prev->data;
 				free(rect->color);
 				free(rect);
-			} else if (prev->type == TYPE_SURFACE) {
+			} else if (prev->type == TYPE_TEXTURE) {
 				eng_Texture *texture = prev->data;
 				SDL_DestroyTexture(texture->texture);
 				free(texture);
@@ -871,7 +784,7 @@ ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
 				.y = rect->y,
 			};
 			SDL_RenderFillRect(app->window.pRenderer, &frect);
-		} else if (curr->type == TYPE_SURFACE) {
+		} else if (curr->type == TYPE_TEXTURE) {
 			eng_Texture *texture = curr->data;
 			SDL_FRect rect = (SDL_FRect) {
 				.h = texture->h,
@@ -880,6 +793,15 @@ ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
 				.y = texture->y,
 			};
 			SDL_RenderTexture(app->window.pRenderer, texture->texture, NULL, &rect);
+		} else if (curr->type == TYPE_TEXT) {
+			eng_Text *text = curr->data;
+			SDL_FRect rect = (SDL_FRect) {
+				.h = text->h,
+				.w = text->w,
+				.x = text->x,
+				.y = text->y,
+			};
+			SDL_RenderTexture(app->window.pRenderer, text->texture, NULL, &rect);
 		}
 
 		curr = curr->pNext;
@@ -888,4 +810,49 @@ ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
 	SDL_RenderPresent(app->window.pRenderer);
 
 	return SUCCESS;
+}
+
+eng_Rect eng_extractRectFromObject(void *object, Type type) {
+	eng_Rect rect = (eng_Rect) {
+		.h = 0,
+		.w = 0,
+		.x = 0,
+		.y = 0,
+	};
+
+	switch (type) {
+		case TYPE_UNKNOWN:
+			errorCode = INVALID_TYPE;
+			return rect;
+		case TYPE_RECT: ;
+			eng_Rect *passedRect = object;
+			rect = (eng_Rect) {
+				.x = passedRect->x,
+				.y = passedRect->y,
+				.h = passedRect->h,
+				.w = passedRect->w,
+			};
+			return rect;
+		case TYPE_TEXT: ;
+			eng_Text *text = object;
+			rect = (eng_Rect) {
+				.x = text->x,
+				.y = text->y,
+				.h = text->h,
+				.w = text->w,
+			};
+			return rect;
+		case TYPE_TEXTURE: ;
+			eng_Texture *texture = object;
+			rect = (eng_Rect) {
+				.x = texture->x,
+				.y = texture->y,
+				.h = texture->h,
+				.w = texture->w,
+			};
+			return rect;
+
+	}
+
+	return rect;
 }

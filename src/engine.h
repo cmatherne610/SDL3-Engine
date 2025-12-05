@@ -22,12 +22,14 @@ typedef enum {
 	FAILED_TO_CONVERT_FONT_TO_TEXTURE,
 	INVALID_TYPE,
 	QUEUE_WAS_NULL,
+	UNKNOWN_ERROR,
 } ENG_RESULT;
 
 typedef enum {
 	TYPE_UNKNOWN,
 	TYPE_RECT,
-	TYPE_SURFACE,
+	TYPE_TEXTURE,
+	TYPE_TEXT,
 } Type;
 
 typedef struct RenderQueue {
@@ -56,7 +58,8 @@ typedef enum {
 	ENG_EVENT_KEY_DOWN,
 	ENG_KEYBOARD_KEY_UP,
 	ENG_MOUSE_BUTTON,
-	ENG_MOUSE_MOVE,
+	ENG_EVENT_WINDOW_SIZE_CHANGED,
+	ENG_EVENT_MOUSE_MOTION,
 } ENG_TYPE;
 
 typedef enum {
@@ -117,16 +120,16 @@ typedef struct {
 	float y;
 } Mouse;
 
-struct Window {
+typedef struct {
 	SDL_Window *pWindow;
 	SDL_Renderer *pRenderer;
 	int width;
 	int height;
 	SDL_Texture background;
-};
+} Window;
 
 typedef struct {
-	struct Window window;
+	Window window;
 	bool isRunning;
 	Event event;
 	Mouse mouse;
@@ -140,6 +143,15 @@ typedef struct {
 	float y;
 	SDL_Texture *texture;
 } eng_Texture;
+
+typedef struct {
+	float h;
+	float w;
+	float x;
+	float y;
+	TTF_Text *text;
+	SDL_Texture *texture;
+} eng_Text;
 
 /*
 * Used to initialize the engine, MUST be called before anything else dealing with the engine. The debug is persistent and prints out results of various functions
@@ -160,10 +172,6 @@ void eng_render(Application *app);
 */
 bool eng_pollEvent(Application *app, uint32_t fps);
 
-/*
-* adds a eng_Rect struct to the render queue
-*/
-ENG_RESULT eng_addRectToRenderQueue(eng_Rect *rect);
 
 /*
 * This quits the engine, this will free the engine queue will be automatically freed
@@ -181,11 +189,6 @@ eng_Rect *eng_createRect(uint32_t h, uint32_t w, uint32_t x, uint32_t y, eng_Col
 ENG_RESULT eng_removeFromRenderQueue(void *data);
 
 /*
-* This adds an image to the render queue
-*/
-eng_Texture *eng_addImageToRenderQueue(struct Window *pWindow, const char *path, uint32_t h, uint32_t w, uint32_t x, uint32_t y);
-
-/*
 * This moves the pointer to a specific position in the queue, -1 will move to the end of the queue
 */
 ENG_RESULT eng_moveToQueuePosition(void *data, int position);
@@ -195,10 +198,6 @@ ENG_RESULT eng_moveToQueuePosition(void *data, int position);
 */
 Mouse eng_getMousePosition();
 
-/*
-* Adds text to the render queue, it can be removed with eng_removeFromRenderQueue()
-*/
-eng_Texture *eng_addFontToRenderQueue(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y);
 
 /*
 * Returns weather two positions collide, you can set the width and height of 1 for the cursor
@@ -222,8 +221,16 @@ ENG_RESULT eng_addToCustomQueue(RenderQueue *queue, void *object, Type type);
 
 ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue);
 
-eng_Texture *eng_createFont(struct Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t h, uint32_t w, uint32_t x, uint32_t y);
+eng_Text *eng_createText(Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t x, uint32_t y);
 
 ENG_RESULT eng_removeFromCustomRenderQueue(RenderQueue *queue, void *data);
+
+ENG_RESULT eng_addObjectToRenderQueue(void *object, Type type);
+
+eng_Texture *eng_createImage(Window *pWindow, const char *path, uint32_t h, uint32_t w, uint32_t x, uint32_t y);
+
+void eng_centerText(Window *pWindow, eng_Text *text);
+
+eng_Rect eng_extractRectFromObject(void *object, Type type);
 
 #endif
