@@ -55,7 +55,8 @@ int main() {
 	Application app = *appPtr;
 
 	Player player;
-	player.texture = eng_createImage(app.window, "../Images/test.png", 64, 32, 0, 0);
+	player.texture = eng_createImage(app.window, "../images/Items/Boxes/Box1/Idle.png", 28, 24, 0, 0);
+	eng_addObjectToRenderQueue(player.texture, TYPE_TEXTURE);
 
 	MainMenu menu = createMainMenu(app.window, "../fonts/Arial.ttf", 72);
 
