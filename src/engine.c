@@ -7,6 +7,8 @@
 #include <string.h>
 
 #include "engine.h"
+#include "SDL3/SDL_mouse.h"
+#include "SDL3/SDL_video.h"
 
 
 static ENG_RESULT errorCode = SUCCESS;
@@ -87,6 +89,10 @@ static ENG_RESULT addQueueToRenderQueue(RenderQueue *object) {
 	renderQueueCount++;
 
 	return SUCCESS;
+}
+
+void eng_windowChangeSize(Window *window, uint32_t width, uint32_t height, bool fullscreen) {
+	SDL_SetWindowFullscreen(window->pWindow, fullscreen);
 }
 
 ENG_RESULT eng_moveToQueuePosition(void *data, int position) {
@@ -288,6 +294,11 @@ eng_Texture *eng_createImage(Window *pWindow, const char *path, uint32_t h, uint
 	}
 
 	SDL_Texture *newTexture = (SDL_Texture *)malloc(sizeof(SDL_Texture));
+	if (newTexture == NULL) {
+		errorCode = FAILED_TO_MALLOC;
+		free(surface);
+		return NULL;
+	}
 	newTexture = SDL_CreateTextureFromSurface(pWindow->pRenderer, surface);
 	SDL_DestroySurface(surface);
 
@@ -551,11 +562,11 @@ bool eng_pollEvent(Application *app, uint32_t fps) {
 				break;
 		}
 	} else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-		SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
+		SDL_GetWindowSize(app->window->pWindow, &app->window->width, &app->window->height);
 		return true;
 	} else if (e.type == SDL_EVENT_WINDOW_RESIZED) {
 		app->event.type = ENG_EVENT_WINDOW_SIZE_CHANGED;
-		SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
+		SDL_GetWindowSize(app->window->pWindow, &app->window->width, &app->window->height);
 		return true;
 	} else if (e.type == SDL_EVENT_MOUSE_MOTION) {
 		app->event.type = ENG_EVENT_MOUSE_MOTION;
@@ -579,11 +590,11 @@ void eng_centerText(Window *pWindow, eng_Text *text) {
 	text->y = (float)(pWindow->height - text->h) / 2;
 }
 
-void eng_render(Application *app) {
+void eng_render(Application *app, eng_Color backgroundColor) {
 	renderingNS = SDL_GetTicksNS();
 
-	SDL_SetRenderDrawColor(app->window.pRenderer, 0, 0, 0, 255);
-	SDL_RenderClear(app->window.pRenderer);
+	SDL_SetRenderDrawColor(app->window->pRenderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
+	SDL_RenderClear(app->window->pRenderer);
 
 	if (renderQueue != NULL) {
 		RenderQueue *temp = renderQueue;
@@ -597,8 +608,8 @@ void eng_render(Application *app) {
 					.y = rect->y,
 				};
 
-				SDL_SetRenderDrawColor(app->window.pRenderer, rect->color->r, rect->color->g,rect->color->b, rect->color->a);
-				SDL_RenderFillRect(app->window.pRenderer, &frect);
+				SDL_SetRenderDrawColor(app->window->pRenderer, rect->color->r, rect->color->g,rect->color->b, rect->color->a);
+				SDL_RenderFillRect(app->window->pRenderer, &frect);
 			} else if (temp->type == TYPE_TEXTURE) {
 				eng_Texture *texture = temp->data;
 				SDL_FRect rect = (SDL_FRect) {
@@ -607,7 +618,7 @@ void eng_render(Application *app) {
 					.x = texture->x,
 					.y = texture->y,
 				};
-				SDL_RenderTexture(app->window.pRenderer, texture->texture, NULL, &rect);
+				SDL_RenderTexture(app->window->pRenderer, texture->texture, NULL, &rect);
 			} else if (temp->type == TYPE_TEXT) {
 				eng_Text *text = temp->data;
 				SDL_FRect rect = (SDL_FRect) {
@@ -616,13 +627,13 @@ void eng_render(Application *app) {
 					.x = text->x,
 					.y = text->y,
 				};
-				SDL_RenderTexture(app->window.pRenderer, text->texture, NULL, &rect);
+				SDL_RenderTexture(app->window->pRenderer, text->texture, NULL, &rect);
 			}
 			temp = temp->pNext;
 		}
 	}
 	
-	SDL_RenderPresent(app->window.pRenderer);
+	SDL_RenderPresent(app->window->pRenderer);
 }
 
 const char *eng_getError() {
@@ -670,8 +681,9 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 	Application *app = (Application *)malloc(sizeof(Application));
 	app->isRunning = true;
 
-	app->window.pWindow = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
-	if (app->window.pWindow == NULL) {
+	app->window = malloc(sizeof(Window));
+	app->window->pWindow = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
+	if (app->window->pWindow == NULL) {
 		errorCode = FAILED_TO_CREATE_WINDOW;
 		free(app);
 		return NULL;
@@ -680,12 +692,12 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 		printf("Created Window\n");
 	}
 
-	SDL_GetWindowSize(app->window.pWindow, &app->window.width, &app->window.height);
+	SDL_GetWindowSize(app->window->pWindow, &app->window->width, &app->window->height);
 
-	app->window.pRenderer = SDL_CreateRenderer(app->window.pWindow, NULL);
-	if (app->window.pRenderer == NULL) {
+	app->window->pRenderer = SDL_CreateRenderer(app->window->pWindow, NULL);
+	if (app->window->pRenderer == NULL) {
 		errorCode = FAILED_TO_CREATE_RENDERER;
-		SDL_DestroyWindow(app->window.pWindow);
+		SDL_DestroyWindow(app->window->pWindow);
 		free(app);
 		return NULL;
 	}
@@ -727,8 +739,8 @@ void eng_quit(Application *app) {
 	}
 
 	if (app) {
-		SDL_DestroyRenderer(app->window.pRenderer);
-		SDL_DestroyWindow(app->window.pWindow);
+		SDL_DestroyRenderer(app->window->pRenderer);
+		SDL_DestroyWindow(app->window->pWindow);
 	}
 
 	TTF_Quit();
@@ -770,10 +782,12 @@ ENG_RESULT eng_addToCustomQueue(RenderQueue *queue, void *object, Type type) {
 	return errorCode = SUCCESS;
 }
 
-ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
+ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue, eng_Color backgroundColor) {
+	renderingNS = SDL_GetTicksNS();
+
 	RenderQueue *curr = customQueue;
-	SDL_SetRenderDrawColor(app->window.pRenderer, 0, 0, 0, 255);
-	SDL_RenderClear(app->window.pRenderer);
+	SDL_SetRenderDrawColor(app->window->pRenderer, 0, 0, 0, 255);
+	SDL_RenderClear(app->window->pRenderer);
 	while (curr != NULL) {
 		if (curr->type == TYPE_RECT) {
 			eng_Rect *rect = curr->data;
@@ -783,7 +797,7 @@ ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
 				.x = rect->x,
 				.y = rect->y,
 			};
-			SDL_RenderFillRect(app->window.pRenderer, &frect);
+			SDL_RenderFillRect(app->window->pRenderer, &frect);
 		} else if (curr->type == TYPE_TEXTURE) {
 			eng_Texture *texture = curr->data;
 			SDL_FRect rect = (SDL_FRect) {
@@ -792,7 +806,7 @@ ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
 				.x = texture->x,
 				.y = texture->y,
 			};
-			SDL_RenderTexture(app->window.pRenderer, texture->texture, NULL, &rect);
+			SDL_RenderTexture(app->window->pRenderer, texture->texture, NULL, &rect);
 		} else if (curr->type == TYPE_TEXT) {
 			eng_Text *text = curr->data;
 			SDL_FRect rect = (SDL_FRect) {
@@ -801,13 +815,13 @@ ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue) {
 				.x = text->x,
 				.y = text->y,
 			};
-			SDL_RenderTexture(app->window.pRenderer, text->texture, NULL, &rect);
+			SDL_RenderTexture(app->window->pRenderer, text->texture, NULL, &rect);
 		}
 
 		curr = curr->pNext;
 	}
 
-	SDL_RenderPresent(app->window.pRenderer);
+	SDL_RenderPresent(app->window->pRenderer);
 
 	return SUCCESS;
 }

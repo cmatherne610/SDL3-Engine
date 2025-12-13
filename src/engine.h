@@ -129,7 +129,7 @@ typedef struct {
 } Window;
 
 typedef struct {
-	Window window;
+	Window *window;
 	bool isRunning;
 	Event event;
 	Mouse mouse;
@@ -166,12 +166,11 @@ Application *eng_createApplication(const char *title, const uint32_t width, cons
 /*
 * This renders the render queue, it should be called in the game loop
 */
+void eng_render(Application *app, eng_Color backgroundColor);
 
-void eng_render(Application *app);
 /* This polls for events and sets the fps, if fps is set to 0 the framerate is unlocked
 */
 bool eng_pollEvent(Application *app, uint32_t fps);
-
 
 /*
 * This quits the engine, this will free the engine queue will be automatically freed
@@ -198,7 +197,6 @@ ENG_RESULT eng_moveToQueuePosition(void *data, int position);
 */
 Mouse eng_getMousePosition();
 
-
 /*
 * Returns weather two positions collide, you can set the width and height of 1 for the cursor
 */
@@ -219,7 +217,7 @@ const char *eng_getError();
 */
 ENG_RESULT eng_addToCustomQueue(RenderQueue *queue, void *object, Type type);
 
-ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue);
+ENG_RESULT eng_renderCustomQueue(Application *app, RenderQueue *customQueue, eng_Color backgroundColor);
 
 eng_Text *eng_createText(Window *window, const char *font, uint32_t fontSize, const char *text, eng_Color color, uint32_t x, uint32_t y);
 
@@ -232,5 +230,7 @@ eng_Texture *eng_createImage(Window *pWindow, const char *path, uint32_t h, uint
 void eng_centerText(Window *pWindow, eng_Text *text);
 
 eng_Rect eng_extractRectFromObject(void *object, Type type);
+
+void eng_windowChangeSize(Window *window, uint32_t width, uint32_t height, bool fullscreen);
 
 #endif
